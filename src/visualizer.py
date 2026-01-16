@@ -52,3 +52,17 @@ class Visualizer:
 		)
 
 		return frame
+
+	def draw_metrics(self, frame, score):
+		text = f"Cleanliness score: {score:.3f}"
+		cv2.putText(
+			frame,
+			text,
+			(20, frame.shape[0] - 20),
+			cv2.FONT_HERSHEY_SIMPLEX,
+			0.7,
+			(255, 255, 255),
+			2
+		)
+
+		return frame
