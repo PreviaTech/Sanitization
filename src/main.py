@@ -1,57 +1,70 @@
-import cv2 
-import time
-from video_stream import VideoStream
-from fake_detector import get_fake_detections
-from segment_analyzer import SegmentAnalyzer
-from filters import apply_physical_filters
+import cv2
+import time 
+
+from video_stream import VideoStream 
+from yolo_detector import YOLODetector 
 from tracker import Tracker
+from filters import DetectionFilter
+from segment_analyzer import SegmentAnalyzer
+from surface_analyzer import SurfaceAnalyzer
+from roi_debug_visualizer import ROIDebugVisualizer
 from visualizer import Visualizer
 
-stream = VideoStream(0)
-# prev_time = time.time()
-visualizer = Visualizer()
-tracker = Tracker()
 
-
-while True:
-	ret, frame = stream.read()
-	if not ret:
-		break
-
-	detections = get_fake_detections(frame.shape)
-	stable_tracks = tracker.update(detections)
-
-	segment_analyzer = SegmentAnalyzer(
-		window_size = 50,
-		threshold = 0.20
+def main():
+	video_stream = VideoStream()
+	detector = YOLODetector(
+		model_path = "yolov8n.pt",
+		img_size = 640,
+		conf_threshold = 0.25
 	)
 
-	stable_detections = [
-		{
-			"bbox": t.bbox,
-			"class": t.cls,
-			"confidence": t.conf
-		}
-		for t in stable_tracks
-	]
+	tracker = Tracker()
+	detection_filter = DetectionFilter()
+	segment_analyzer = SegmentAnalyzer()
+	surface_analyzer = SurfaceAnalyzer()
+	visualizer = Visualizer()
+	debug_viz = ROIDebugVisualizer()
 
-	filtered_detections = apply_physical_filters(
-		stable_detections,
-		frame.shape
-	)
+	prev_time = time.time()
 
-	requires_cleaning, segment_score = segment_analyzer.update(
-		filtered_detections,
-		frame.shape
-	)
+	while True:
+		ret, frame = video_stream.read()
+		if not ret or frame is None:
+			break
 
-	frame = visualizer.draw_detections(frame, filtered_detections)
-	frame = visualizer.draw_banner(frame, requires_cleaning)
-	frame = visualizer.draw_metrics(frame, segment_score)
+		current_time = time.time()
+		fps = 1.0 / max(current_time - prev_time, 1e-6)
+		prev_time = current_time
+		
+		detections = detector.detect(frame)
+		detections = detection_filter.apply(detections, frame.shape)
+		tracks = tracker.update(detections)
+		surface_score = surface_analyzer.update(frame)
+		segment_state = segment_analyzer.update(
+			tracks,
+			frame.shape,
+			surface_score,
+			fps
+		)
 
-	cv2.imshow("Live Feed", frame)
-	if cv2.waitKey(1) & 0xFF == 27:
-		break
+		current_time = time.time()
+		fps = 1.0 / (current_time - prev_time)
+		prev_time = current_time
 
-stream.release()
-cv2.destroyAllWindows()
+		debug_frame = debug_viz.visualize(
+			frame,
+			surface_analyzer,
+			segment_state["surface_score"]
+		)
+
+		cv2.imshow("Demo", debug_frame)
+
+		if cv2.waitKey(1) & 0xFF == 27:
+			break
+
+	video_stream.release()
+	cv2.destroyAllWindows()
+
+if __name__ == "__main__":
+	main()

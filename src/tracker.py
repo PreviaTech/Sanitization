@@ -20,14 +20,26 @@ class Track:
 	def __init__(self, det):
 		self.bbox = det["bbox"]
 		self.cls = det["class"]
-		self.conf = det["confidence"]
+		self.confidence = det["confidence"]
 
 		self.age = 1
 		self.missed = 0
 
+	def update(self, det):
+		"""
+		update track with new detection
+		"""
+		self.confidence = 0.4 * det["confidence"] + 0.6 * self.confidence
+
+		self.bbox = det["bbox"]
+
+		self.missed = 0
+
+		self.age += 1
+
 
 class Tracker:
-	def __init__(self, iou_thresh = 0.4, max_missed = 8, min_age = 5):
+	def __init__(self, iou_thresh = 0.5, max_missed = 2, min_age = 4):
 		self.tracks = []
 		self.iou_thresh = iou_thresh
 		self.max_missed = max_missed
@@ -39,11 +51,10 @@ class Tracker:
 
 		for det in detections:
 			matched = False
+
 			for tr in self.tracks:
 				if tr.cls == det["class"] and iou(tr.bbox, det["bbox"]) > self.iou_thresh:
-					tr.conf = 0.3 * det["confidence"] + 0.7 * tr.conf
-					tr.bbox = det["bbox"]
-					tr.age += 1
+					tr.update(det)
 					matched = True
 					break
 
@@ -53,4 +64,6 @@ class Tracker:
 
 		self.tracks = [t for t in self.tracks if t.missed <= self.max_missed]
 
-		return [t for t in self.tracks if t.age >= self.min_age]
+		mature_tracks = [t for t in self.tracks if t.age >= self.min_age]
+
+		return mature_tracks
